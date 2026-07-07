@@ -14,15 +14,17 @@ Mandatory rules for all contributors and AI agents. Violations block PR merge.
 
 | Logic type | Single home | Never duplicate in |
 |------------|-------------|-------------------|
-| Permission checks | `backend/app/core/permissions.py` + `services/permission_service.py` | routes, other services, frontend |
-| Entitlement checks | `services/entitlement_service.py` | routes, workers, frontend |
-| DB queries for a resource | `services/{resource}_service.py` | routes, other services |
-| Pydantic validation | `schemas/` | routes (inline dicts) |
+| Permission checks | `backend/services/identity/app/core/permissions.py` + identity `permission_service.py` | routes, other services, frontend |
+| Entitlement checks | `backend/services/entitlement/app/service_layer/entitlement_service.py` | routes, workers, frontend |
+| DB queries for a resource | Owning service's `app/service_layer/{resource}_service.py` | routes, other services |
+| Pydantic validation | Owning service's `app/schemas/` | routes (inline dicts) |
 | API HTTP calls | `frontend/src/lib/api.ts` | components (raw fetch) |
 | Auth token handling | `frontend/src/lib/auth.ts` | individual pages |
 | Date/price formatting | `frontend/src/lib/format.ts` | components |
-| S3/storage operations | `services/storage_service.py` | upload routes, workers |
-| Stripe operations | `services/payment_service.py` | checkout routes, webhooks |
+| S3/storage operations | `backend/services/content/app/service_layer/storage_service.py` | upload routes, workers |
+| Stripe operations | `backend/services/payment/app/service_layer/payment_service.py` | checkout routes, webhooks |
+| RabbitMQ contracts | `docs/EVENTS.md` + `backend/shared/digimart_shared/events.py` | service-local hard-coded strings |
+| RabbitMQ publish/consume code | Owning service's `app/publishers/` and `app/consumers/` | routes, random helpers |
 
 ### Before writing a new function
 
@@ -101,10 +103,10 @@ Request
 All permission logic is centralized in:
 
 ```
-backend/app/
+backend/services/identity/app/
   core/
     permissions.py          # Permission enum, role-permission map
-  services/
+  service_layer/
     permission_service.py   # All require_* and can_* functions
   api/
     deps.py                 # FastAPI dependencies that call permission_service
@@ -183,7 +185,7 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
 ### Permission service (single implementation)
 
 ```python
-# services/permission_service.py
+# backend/services/identity/app/service_layer/permission_service.py
 
 class PermissionService:
     def has_permission(self, user: User, permission: Permission) -> bool: ...
@@ -281,7 +283,40 @@ Every protected endpoint needs tests for:
 
 ---
 
-## 3. General coding standards
+## 3. Microservice and RabbitMQ standards
+
+### Service boundaries
+
+- Each domain service owns its data, migrations, business logic, and tests.
+- A service may write only to its own tables.
+- Do not import from another service's `app/` package.
+- Shared code in `backend/shared/` is limited to contracts, messaging primitives, logging, settings bases, and typed client infrastructure.
+- Browser clients call the gateway only. The gateway may compose service responses but must not own domain business logic.
+
+### RabbitMQ
+
+- Use RabbitMQ for interprocess communication and cross-service state changes.
+- Define every exchange, routing key, event name, payload schema, and version in `docs/EVENTS.md`.
+- Mirror event names and versions in `backend/shared/digimart_shared/events.py`.
+- Publish domain events only after the local database transaction succeeds. Prefer the transactional outbox pattern for high-value events such as payments and entitlements.
+- Consumers must be idempotent and safe to retry.
+- Use durable exchanges, durable queues, persistent messages, retry queues, and dead-letter queues.
+- Include `event_id`, `event_type`, `event_version`, `occurred_at`, `producer`, `correlation_id`, and `payload` in every message.
+- Use `correlation_id` across gateway requests, service HTTP calls, RabbitMQ messages, and logs.
+- Do not use RabbitMQ as a database. If state matters, persist it in the owning service database.
+- Do not use Redis, direct database access, or shared files for service-to-service messaging.
+
+### Event evolution
+
+- Never silently change an existing event payload.
+- Add optional fields for backward-compatible changes.
+- Increment `event_version` for breaking changes.
+- Keep old consumers working until all producers and consumers are migrated.
+- Add contract tests when an event producer or consumer changes.
+
+---
+
+## 4. General coding standards
 
 ### Python (backend)
 
@@ -294,11 +329,11 @@ Every protected endpoint needs tests for:
 - Exceptions: use custom exceptions in `core/exceptions.py`; map to HTTP in exception handlers
 - No `print()`; use structured logging
 
-### TypeScript (frontend)
+### TypeScript / React (frontend)
 
 - **Strict mode** enabled
 - No `any`; use proper types from `lib/types.ts`
-- Components: PascalCase files; hooks: `use*.ts`
+- Components: typed React components with PascalCase files; hooks: `use*.ts`
 - Max component length: **150 lines**; extract sub-components
 - Error handling: all API calls through `api.ts` with typed errors
 
@@ -323,18 +358,20 @@ Every protected endpoint needs tests for:
 
 ---
 
-## 4. File creation checklist
+## 5. File creation checklist
 
 Before adding a new file, confirm:
 
 - [ ] Logic doesn't already exist elsewhere (grep first)
 - [ ] File belongs in the correct layer (service vs route vs schema)
 - [ ] Permission checks use `permission_service`, not inline code
+- [ ] Cross-service communication uses RabbitMQ events/commands or a typed service client
+- [ ] RabbitMQ messages match `docs/EVENTS.md`
 - [ ] No duplicate of an existing utility function
 
 ---
 
-## 5. Linting (enforce in CI)
+## 6. Linting (enforce in CI)
 
 ### Backend
 
@@ -359,16 +396,17 @@ strict = true
 ```bash
 # scripts/check-duplicates.sh — run in CI
 # Fail if same function name defined in multiple service files
-grep -rn "^def \|^async def " backend/app/services/ | \
+grep -rn "^def \|^async def " backend/services/*/app/service_layer/ | \
   awk -F: '{print $3}' | sort | uniq -d | \
   grep -v "^$" && exit 1 || exit 0
 ```
 
 ---
 
-## 6. Related documents
+## 7. Related documents
 
 - [FOLDER_STRUCTURE.md](FOLDER_STRUCTURE.md) — where to place files
+- [EVENTS.md](EVENTS.md) — RabbitMQ event contracts
 - [AGENTS.md](../AGENTS.md) — AI agent guide
 - [SECURITY.md](SECURITY.md) — content protection
 - [API.md](API.md) — endpoint contract

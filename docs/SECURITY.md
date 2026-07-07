@@ -11,6 +11,7 @@
 | Stripe webhook forgery | Low | Critical | Signature verification, idempotency keys |
 | Creator uploads malware | Medium | High | ClamAV scan, file type validation, sandboxed transcode |
 | API abuse / scraping | Medium | Medium | Rate limits, WAF, bot detection |
+| Broker abuse / forged internal events | Medium | High | RabbitMQ TLS, per-service credentials, signed/validated event schemas |
 | Insider / DB leak | Low | Critical | Encrypt at rest, least-privilege IAM, no public buckets |
 
 **Accept:** Determined attackers with dedicated screen capture hardware cannot be fully stopped on web. Goal is deterrence + traceability + legal recourse.
@@ -197,7 +198,20 @@ Additional checks:
 
 ---
 
-## 10. Audit logging
+## 10. RabbitMQ security
+
+- Use TLS for RabbitMQ outside local development.
+- Use separate RabbitMQ credentials per service.
+- Grant least-privilege permissions per vhost, exchange, and queue.
+- Services may publish only the event types they own.
+- Consumers must validate event envelope and payload schema before processing.
+- Never put secrets, card data, JWT refresh tokens, or raw file URLs in RabbitMQ messages.
+- Use durable queues and dead-letter queues so failed security-relevant events are not silently lost.
+- Log `event_id` and `correlation_id` for every publish and consume operation.
+
+---
+
+## 11. Audit logging
 
 Log every security-relevant event to `audit_logs` table (append-only):
 
@@ -210,47 +224,49 @@ Log every security-relevant event to `audit_logs` table (append-only):
 | `upload` | creator_id, content_id, file_size |
 | `admin_action` | admin_id, action, target_id |
 
+Audit service consumes auditable RabbitMQ domain events and writes append-only records. Producers should include enough metadata for audit without leaking secrets.
+
 Retain 2 years minimum. Export for legal requests.
 
 ---
 
-## 11. Legal & policy framework
+## 12. Legal & policy framework
 
 Ship these pages before public launch (Phase 2):
 
-### 11.1 Terms of Service (key clauses)
+### 12.1 Terms of Service (key clauses)
 
 - License is **personal, non-transferable, non-sublicensable**
 - Prohibited: sharing credentials, redistributing content, screen recording for redistribution
 - Platform may terminate account for violations without refund
 - Creator retains IP; buyer gets limited access license
 
-### 11.2 Privacy Policy
+### 12.2 Privacy Policy
 
 - Data collected: email, payment via Stripe, viewing analytics, device info
 - GDPR/CCPA: data export and deletion requests
 
-### 11.3 Creator Agreement
+### 12.3 Creator Agreement
 
 - Creator warrants they own or have rights to uploaded content
 - DMCA takedown cooperation
 - Revenue share terms
 
-### 11.4 DMCA process
+### 12.4 DMCA process
 
 - Designated agent email
 - Takedown request form
 - Counter-notice workflow
 - Repeat infringer policy (3 strikes → ban)
 
-### 11.5 Acceptable Use Policy
+### 12.5 Acceptable Use Policy
 
 - No pirated content, malware, illegal material
 - Content moderation queue for new creators (Phase 2)
 
 ---
 
-## 12. Incident response
+## 13. Incident response
 
 1. **Detection:** anomaly alert (spike in playback tokens, same account many IPs)
 2. **Containment:** revoke sessions, disable account, rotate content keys

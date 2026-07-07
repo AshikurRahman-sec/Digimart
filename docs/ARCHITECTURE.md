@@ -17,7 +17,7 @@ No architecture eliminates piracy entirely. Goal: raise the cost of leakage high
 ```mermaid
 flowchart TB
     subgraph clients [Clients]
-        Web[Next.js Web App]
+        Web[React + Next.js Web App]
         Admin[Admin Dashboard]
     end
 
@@ -27,8 +27,16 @@ flowchart TB
     end
 
     subgraph api [Application Layer]
-        API[FastAPI Backend]
-        Worker[Celery Workers]
+        Gateway[API Gateway / BFF]
+        Identity[Identity Service]
+        Catalog[Catalog Service]
+        Content[Content Service]
+        Entitlement[Entitlement Service]
+        Payment[Payment Service]
+        Playback[Playback Service]
+        Notification[Notification Service]
+        Worker[Media Worker Service]
+        Rabbit[(RabbitMQ)]
     end
 
     subgraph data [Data Layer]
@@ -44,20 +52,73 @@ flowchart TB
     end
 
     Web --> WAF --> CDN
-    Web --> API
-    Admin --> API
+    Web --> Gateway
+    Admin --> Gateway
     CDN --> S3
-    API --> PG
-    API --> Redis
-    API --> S3
-    API --> Stripe
-    API --> Mux
+    Gateway --> Identity
+    Gateway --> Catalog
+    Gateway --> Content
+    Gateway --> Payment
+    Gateway --> Playback
+    Identity --> PG
+    Catalog --> PG
+    Content --> PG
+    Entitlement --> PG
+    Payment --> PG
+    Playback --> PG
+    Entitlement --> Redis
+    Playback --> Redis
+    Content --> S3
+    Payment --> Stripe
+    Content --> Mux
     Worker --> S3
     Worker --> Mux
     Worker --> PG
-    Worker --> Redis
-    API --> Email
+    Content --> Rabbit
+    Payment --> Rabbit
+    Entitlement --> Rabbit
+    Worker --> Rabbit
+    Notification --> Rabbit
+    Notification --> Email
 ```
+
+---
+
+## 2.1 Microservice architecture rule
+
+DigiMart is a **microservice-first** system. Each backend domain must be developed as an independently deployable FastAPI service with its own API routes, schemas, service layer, database access code, tests, and Docker entrypoint.
+
+The frontend and admin dashboard call the **API Gateway / BFF** only. Services communicate with each other through:
+
+1. Synchronous HTTP only for read/query operations that need an immediate response.
+2. RabbitMQ events or commands for cross-service state changes and background workflows.
+
+Do not create a new all-purpose backend module that bypasses these service boundaries.
+
+### Service ownership
+
+| Service | Owns | Publishes / consumes |
+|---------|------|----------------------|
+| Identity | users, roles, refresh tokens | Publishes `user.registered`, `user.role_changed` |
+| Catalog | creator profiles, products, product-content links | Publishes `product.published`, consumes `content.ready` |
+| Content | upload metadata, storage keys, content status | Publishes `content.upload_completed`; consumes `content.ready`, `content.failed` |
+| Media Worker | virus scan, transcode, PDF conversion | Consumes `content.upload_completed`; publishes `content.ready`, `content.failed` |
+| Payment | Stripe checkout, subscription plans, purchases, subscriptions, webhook idempotency | Publishes `payment.completed`, `payment.refunded`, `subscription.changed` |
+| Entitlement | access decisions and Redis entitlement cache | Consumes payment/subscription/content events, publishes `entitlement.invalidated` |
+| Playback | playback tokens, sessions, heartbeat, stream limits | Consumes `entitlement.invalidated`, publishes `playback.started`, `playback.ended` |
+| Notification | email and in-app notifications | Consumes domain events, sends email |
+| Audit | append-only security/event log | Consumes all auditable domain events |
+
+### RabbitMQ rules
+
+- RabbitMQ is the required interprocess communication broker.
+- Use topic exchanges for domain events: `digimart.events`.
+- Use direct exchanges for commands that target one service: `digimart.commands`.
+- Every message must include `event_id`, `event_type`, `event_version`, `occurred_at`, `producer`, `correlation_id`, and `payload`.
+- Consumers must be idempotent. Store processed `event_id` values for externally visible side effects.
+- Use durable exchanges, durable queues, persistent messages, retry queues, and dead-letter queues.
+- Do not use RabbitMQ as the source of truth. PostgreSQL remains the source of truth for each service-owned data model.
+- Redis is for cache/rate-limit/session state, not service-to-service messaging.
 
 ---
 
@@ -87,9 +148,11 @@ flowchart TB
 Creator uploads file
     → API validates type/size, creates ContentItem (status: uploading)
     → Presigned PUT URL returned; client uploads direct to S3
-    → S3 event / webhook triggers Worker
+    → Content Service publishes content.upload_completed to RabbitMQ
+    → Media Worker consumes event
     → Worker: virus scan, transcode (video), generate thumbnails, extract PDF pages
-    → ContentItem status → ready | failed
+    → Worker publishes content.ready | content.failed
+    → Content Service records final status
 ```
 
 **Upload limits (defaults):**
@@ -142,6 +205,7 @@ Buyer clicks Play
 - **Stripe Checkout** for one-time purchases.
 - **Stripe Billing** for subscriptions.
 - Webhooks: `checkout.session.completed`, `invoice.paid`, `customer.subscription.deleted`, `charge.refunded`.
+- Payment Service publishes RabbitMQ events after signed, idempotent webhook handling.
 - Platform fee: configurable % (e.g. 15%) via Stripe Connect (creators as connected accounts).
 
 ### 3.7 Notification service
@@ -159,23 +223,27 @@ Buyer clicks Play
 ┌─────────────────────────────────────────────┐
 │  VPS / Railway / Fly.io / AWS ECS           │
 │  ┌─────────┐  ┌─────────┐  ┌─────────────┐  │
-│  │ Next.js │  │ FastAPI │  │ Celery x2   │  │
+│  │ React + │  │ Gateway │  │ Services    │  │
+│  │ Next.js │  │         │  │             │  │
+│  │         │  │         │  │ Workers     │  │
 │  └─────────┘  └─────────┘  └─────────────┘  │
 └─────────────────────────────────────────────┘
          │              │              │
-    PostgreSQL       Redis          S3 + CDN
-    (managed)      (managed)       (managed)
+    PostgreSQL       Redis       RabbitMQ     S3 + CDN
+    (managed)      (managed)    (managed)    (managed)
 ```
 
 ### Production (recommended)
 
 | Component | Service |
 |-----------|---------|
-| Frontend | Vercel or CloudFront + S3 static |
+| Frontend | React.js with Next.js on Vercel or CloudFront + S3 static |
 | API | AWS ECS Fargate or Railway (2+ replicas) |
-| Workers | Separate ECS service, auto-scale on queue depth |
+| Microservices | Separate ECS/Fly/Railway services per domain |
+| Workers | Separate worker services, auto-scale on RabbitMQ queue depth |
 | DB | RDS PostgreSQL Multi-AZ |
 | Redis | ElastiCache |
+| Broker | Amazon MQ for RabbitMQ, CloudAMQP, or RabbitMQ cluster |
 | Storage | S3 private buckets |
 | CDN | CloudFront with Origin Access Control |
 | Secrets | AWS Secrets Manager / Doppler |
@@ -197,20 +265,28 @@ Buyer clicks Play
 sequenceDiagram
     participant B as Buyer
     participant FE as Frontend
-    participant API as Backend
+    participant API as Gateway
+    participant P as Payment Service
+    participant MQ as RabbitMQ
+    participant E as Entitlement Service
     participant S as Stripe
     participant DB as PostgreSQL
 
     B->>FE: Click Buy
     FE->>API: POST /checkout/sessions
-    API->>DB: Verify product active
-    API->>S: Create Checkout Session
-    S-->>API: session_url
+    API->>P: Forward checkout request
+    P->>DB: Verify product active
+    P->>S: Create Checkout Session
+    S-->>P: session_url
+    P-->>API: session_url
     API-->>FE: Redirect URL
     FE->>S: Stripe Checkout
-    S->>API: Webhook payment succeeded
-    API->>DB: Create Purchase + Entitlement
-    API->>DB: Invalidate entitlement cache
+    S->>P: Webhook payment succeeded
+    P->>DB: Create Purchase
+    P->>MQ: Publish payment.completed
+    MQ->>E: Deliver payment.completed
+    E->>DB: Recompute entitlement
+    E->>DB: Invalidate entitlement cache
     S-->>B: Redirect success page
 ```
 
@@ -220,14 +296,18 @@ sequenceDiagram
 sequenceDiagram
     participant B as Buyer
     participant FE as Frontend
-    participant API as Backend
+    participant API as Gateway
+    participant PB as Playback Service
+    participant E as Entitlement Service
     participant CDN as CDN
     participant S3 as S3
 
     B->>FE: Click Play
     FE->>API: POST /content/{id}/playback-token
-    API->>API: Check entitlement
-    API->>API: Mint signed JWT (user, content, exp)
+    API->>PB: Forward playback request
+    PB->>E: Check entitlement
+    PB->>PB: Mint signed JWT (user, content, exp)
+    PB-->>API: playback_url + token
     API-->>FE: playback_url + token
     FE->>CDN: GET manifest.m3u8?token=...
     CDN->>CDN: Validate token
@@ -243,7 +323,8 @@ sequenceDiagram
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Monolith vs microservices | Modular monolith (FastAPI) | Faster MVP; split later if needed |
+| Monolith vs microservices | Microservice-first FastAPI services | Clear ownership, independent scaling, RabbitMQ workflows |
+| Interprocess communication | RabbitMQ topic/direct exchanges | Reliable async communication between services |
 | Direct-to-S3 upload | Presigned URLs | Keeps large files off API servers |
 | Video host | Mux (MVP) or self-hosted ffmpeg | Mux reduces ops; self-host cuts cost at scale |
 | PDF protection | Viewer-only + watermark; no download button | Download prevention is UX + policy, not absolute |

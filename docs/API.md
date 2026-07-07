@@ -1,7 +1,9 @@
 # DigiMart — API Contract
 
-Base URL: `https://api.digimart.com/api/v1`  
+Base URL: `https://api.digimart.com/api/v1`
 Auth: `Authorization: Bearer <access_token>`
+
+The public API is exposed by the **API Gateway / BFF**. Browser clients must not call backend domain services directly. The gateway forwards or composes requests across microservices.
 
 All responses use JSON. Errors:
 
@@ -270,7 +272,7 @@ For PDF/notes:
 
 Generate from FastAPI at `/docs` (dev only; disable in production or protect with auth).
 
-Implementation file: `backend/app/main.py` — include routers:
+Implementation file: `backend/gateway/app/main.py` — include browser-facing routers:
 
 ```
 app.include_router(auth_router, prefix="/api/v1/auth")
@@ -280,3 +282,5 @@ app.include_router(products_router, prefix="/api/v1/products")
 app.include_router(checkout_router, prefix="/api/v1/checkout")
 app.include_router(webhooks_router, prefix="/api/v1/webhooks")
 ```
+
+Service-owned HTTP APIs live under `backend/services/{service}/app/api/routes/` and are internal. Cross-service state changes should use RabbitMQ events defined in `docs/EVENTS.md`; use internal HTTP only for immediate query/command responses that cannot be asynchronous.

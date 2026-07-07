@@ -21,140 +21,127 @@ digimart/
 │   ├── CODING_STANDARDS.md
 │   ├── DATABASE.md
 │   ├── DEVELOPMENT_PHASES.md
+│   ├── EVENTS.md                 # RabbitMQ event contracts
 │   ├── FOLDER_STRUCTURE.md       # this file
 │   └── SECURITY.md
-├── backend/                      # FastAPI application
-├── frontend/                     # Next.js application
+├── backend/                      # FastAPI microservices
+├── frontend/                     # React + Next.js application
 ├── scripts/                      # DevOps & utility scripts
 ├── AGENTS.md                     # AI agent instructions
 ├── README.md
-├── docker-compose.yml            # Local: postgres, redis, minio
+├── docker-compose.yml            # Local: postgres, redis, rabbitmq, minio
 └── .env.example
 ```
 
 ---
 
-## Backend (`backend/`)
+## Backend microservices (`backend/`)
 
 ```
 backend/
-├── alembic/
-│   ├── versions/                 # One migration file per schema change
-│   │   └── 001_initial_users.py
-│   └── env.py
-├── app/
-│   ├── __init__.py
-│   ├── main.py                   # FastAPI app factory, router includes, exception handlers
-│   │
-│   ├── api/
+├── shared/                       # Shared contracts only; no business logic
+│   ├── digimart_shared/
 │   │   ├── __init__.py
-│   │   ├── deps.py               # get_current_user, require_permission(), get_db
-│   │   └── routes/
-│   │       ├── __init__.py
-│   │       ├── auth.py           # register, login, refresh, logout
-│   │       ├── creators.py       # creator profile CRUD
-│   │       ├── products.py       # product catalog CRUD, publish
-│   │       ├── content.py        # upload init/complete, metadata
-│   │       ├── checkout.py       # Stripe checkout sessions
-│   │       ├── playback.py       # playback-token, heartbeat, page URLs
-│   │       ├── webhooks.py       # Stripe webhooks (signature verified)
-│   │       └── admin.py          # suspend user, moderate content (Phase 6)
-│   │
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── config.py             # pydantic-settings; env vars
-│   │   ├── security.py           # password hash, JWT encode/decode
-│   │   ├── permissions.py        # Role, Permission enums; ROLE_PERMISSIONS map
-│   │   ├── exceptions.py         # ForbiddenError, NotFoundError → HTTP mapping
-│   │   └── logging.py            # structured JSON logger
-│   │
-│   ├── db/
-│   │   ├── __init__.py
-│   │   ├── session.py            # async engine, get_session
-│   │   └── base.py               # declarative Base
-│   │
-│   ├── models/
-│   │   ├── __init__.py           # export all models for Alembic
-│   │   ├── user.py
-│   │   ├── creator_profile.py
-│   │   ├── content_item.py
-│   │   ├── product.py
-│   │   ├── purchase.py
-│   │   ├── subscription.py
-│   │   ├── audit_log.py
-│   │   └── stripe_webhook_event.py
-│   │
-│   ├── schemas/
-│   │   ├── __init__.py
-│   │   ├── auth.py               # RegisterRequest, TokenResponse
-│   │   ├── user.py
-│   │   ├── creator.py
-│   │   ├── product.py
-│   │   ├── content.py
-│   │   ├── checkout.py
-│   │   ├── playback.py
-│   │   └── common.py             # Pagination, ErrorResponse
-│   │
-│   ├── services/                 # ALL business logic lives here
-│   │   ├── __init__.py
-│   │   ├── permission_service.py # require_role, require_permission, require_*_owner
-│   │   ├── entitlement_service.py# has_access(), cache invalidation
-│   │   ├── auth_service.py       # register, login, refresh, revoke
-│   │   ├── creator_service.py
-│   │   ├── product_service.py
-│   │   ├── content_service.py    # upload init, metadata, attach to product
-│   │   ├── storage_service.py    # S3 presigned URLs, key layout (single place)
-│   │   ├── payment_service.py    # Stripe checkout, webhook handling
-│   │   ├── playback_service.py   # mint playback JWT, heartbeat
-│   │   ├── audit_service.py      # write audit_logs (single place)
-│   │   └── admin_service.py
-│   │
-│   └── workers/
-│       ├── __init__.py
-│       ├── celery_app.py         # Celery instance, broker config
-│       └── tasks/
-│           ├── __init__.py
-│           ├── transcode.py      # video → HLS
-│           ├── document.py       # PPTX→PDF, thumbnail
-│           └── scan.py           # ClamAV virus scan
+│   │   ├── events.py             # Event envelope, event names, versions
+│   │   ├── messaging.py          # RabbitMQ publisher/consumer helpers
+│   │   ├── logging.py            # request_id/correlation_id logging
+│   │   └── settings.py           # common pydantic settings base
+│   └── pyproject.toml
 │
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py               # test DB, async client, fixtures
-│   ├── unit/
-│   │   ├── test_permission_service.py
-│   │   ├── test_entitlement_service.py
-│   │   └── test_security.py
-│   └── integration/
-│       ├── test_auth.py
-│       ├── test_products.py
-│       ├── test_upload.py
-│       ├── test_checkout.py
-│       └── test_playback.py
+├── gateway/                      # API Gateway / BFF, browser-facing only
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── api/
+│   │   │   ├── deps.py           # auth forwarding, request context
+│   │   │   └── routes/           # thin proxy/composition routes
+│   │   ├── core/
+│   │   ├── schemas/
+│   │   └── clients/              # typed HTTP clients to backend services
+│   ├── tests/
+│   ├── Dockerfile
+│   └── pyproject.toml
 │
-├── alembic.ini
-├── pyproject.toml                # deps, ruff, mypy, pytest config
-└── .env                          # gitignored; copy from .env.example
+├── services/
+│   ├── identity/
+│   ├── catalog/
+│   ├── content/
+│   ├── media-worker/
+│   ├── payment/
+│   ├── entitlement/
+│   ├── playback/
+│   ├── notification/
+│   └── audit/
+│
+├── docker/                       # service Docker helpers if needed
+├── pyproject.toml                # workspace/tooling config
+└── README.md
 ```
 
-### Backend file placement rules
+Each service under `backend/services/{service-name}/` follows this shape:
+
+```
+backend/services/{service-name}/
+├── alembic/
+│   ├── versions/                 # Service-owned migrations only
+│   └── env.py
+├── app/
+│   ├── main.py                   # FastAPI app factory, router includes, exception handlers
+│   ├── api/
+│   │   ├── deps.py
+│   │   └── routes/               # HTTP endpoints owned by this service
+│   ├── core/
+│   │   ├── config.py
+│   │   ├── exceptions.py
+│   │   └── security.py           # only if this service owns security behavior
+│   ├── db/
+│   │   ├── base.py
+│   │   └── session.py
+│   ├── models/                   # Tables owned by this service
+│   ├── schemas/                  # Pydantic request/response models
+│   ├── service_layer/            # Business logic for this bounded context
+│   ├── consumers/                # RabbitMQ consumers
+│   ├── publishers/               # RabbitMQ event publishers
+│   └── clients/                  # Typed clients to other services, if needed
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   └── contract/                 # Event/API contract tests
+├── alembic.ini
+├── Dockerfile
+└── pyproject.toml
+```
+
+### Backend microservice placement rules
 
 | If you are adding… | Put it in… |
 |--------------------|------------|
-| HTTP endpoint | `api/routes/{domain}.py` — thin only |
-| Auth/permission dependency | `api/deps.py` |
-| Business logic | `services/{domain}_service.py` |
-| DB table model | `models/{name}.py` |
-| Request/response shape | `schemas/{domain}.py` |
-| Permission enum or role map | `core/permissions.py` only |
-| Background job | `workers/tasks/{job}.py` |
-| DB migration | `alembic/versions/` |
-| Test for one service | `tests/unit/test_{service}.py` |
-| Test for API endpoint | `tests/integration/test_{domain}.py` |
+| Browser-facing route | `backend/gateway/app/api/routes/{domain}.py` |
+| Service-owned HTTP endpoint | `backend/services/{service}/app/api/routes/{domain}.py` |
+| Business logic | `backend/services/{service}/app/service_layer/{domain}_service.py` |
+| DB table model | `backend/services/{service}/app/models/{name}.py` |
+| Request/response shape | `backend/services/{service}/app/schemas/{domain}.py` |
+| RabbitMQ event contract | `docs/EVENTS.md` + `backend/shared/digimart_shared/events.py` |
+| RabbitMQ publisher | `backend/services/{service}/app/publishers/{domain}_publisher.py` |
+| RabbitMQ consumer | `backend/services/{service}/app/consumers/{event_name}_consumer.py` |
+| DB migration | `backend/services/{service}/alembic/versions/` |
+| Test for one service | `backend/services/{service}/tests/unit/` |
+| API endpoint test | `backend/services/{service}/tests/integration/` |
+| Event contract test | `backend/services/{service}/tests/contract/` |
+
+### Service boundary rules
+
+- A service may write only to its own tables.
+- Cross-service state changes happen through RabbitMQ events or commands.
+- Cross-service reads use typed HTTP clients from `clients/` only when an immediate response is required.
+- Do not import code from another service's `app/` package.
+- `backend/shared/` may contain event envelopes, logging helpers, settings primitives, and typed client base classes only. It must not contain product, payment, entitlement, or content business logic.
+- Redis is for cache, rate limiting, and playback/session state. RabbitMQ is for interprocess communication.
 
 ---
 
 ## Frontend (`frontend/`)
+
+The frontend uses **React.js with Next.js App Router**. Build UI as React components, React hooks, and typed Next.js route files.
 
 ```
 frontend/
@@ -163,7 +150,7 @@ frontend/
 │   └── legal/                    # Static legal HTML/PDF if needed
 │
 ├── src/
-│   ├── app/                      # Next.js App Router
+│   ├── app/                      # Next.js App Router using React components
 │   │   ├── layout.tsx            # root layout, providers
 │   │   ├── page.tsx              # marketplace home
 │   │   ├── globals.css
@@ -312,12 +299,14 @@ digimart-content/
 
 | Avoid | Reason |
 |-------|--------|
-| `backend/app/utils/` with random helpers | Use the correct `services/` or `core/` module |
+| `backend/app/` as a new monolith | Use `backend/gateway/` or `backend/services/{service}/` |
+| `backend/services/{service}/app/utils/` with random helpers | Use the correct `service_layer/`, `core/`, or `shared/` module |
 | `frontend/src/services/` duplicating `lib/api.ts` | Single API client |
 | `frontend/src/utils/permissions.ts` enforcing access | Backend only |
-| `backend/app/helpers/entitlement.py` | Use `entitlement_service.py` |
+| `backend/services/*/app/helpers/entitlement.py` | Use the entitlement service boundary |
 | Business logic in `api/routes/` | Routes must stay thin |
-| Multiple `storage*.py` files | One `storage_service.py` |
+| Multiple `storage*.py` files | Storage operations belong to the Content service |
+| Direct imports from another service's `app/` package | Use RabbitMQ events or typed HTTP clients |
 
 ---
 
@@ -326,11 +315,15 @@ digimart-content/
 When scaffolding, create at minimum:
 
 **Backend:**
-- [ ] `app/main.py`, `core/config.py`, `core/permissions.py`, `core/exceptions.py`
-- [ ] `api/deps.py`, `api/routes/` (empty `__init__.py`)
-- [ ] `services/permission_service.py` (stub)
-- [ ] `db/session.py`, `db/base.py`
-- [ ] `tests/conftest.py`
+- [ ] `backend/shared/digimart_shared/events.py`
+- [ ] `backend/shared/digimart_shared/messaging.py`
+- [ ] `backend/gateway/app/main.py`, `backend/gateway/app/api/routes/`
+- [ ] `backend/services/identity/app/main.py`, `core/config.py`, `core/permissions.py`, `core/exceptions.py`
+- [ ] `backend/services/identity/app/service_layer/permission_service.py` (stub)
+- [ ] `backend/services/identity/app/db/session.py`, `db/base.py`
+- [ ] `backend/services/{catalog,content,payment,entitlement,playback,notification,audit}/app/main.py`
+- [ ] `backend/services/media-worker/app/consumers/`
+- [ ] `tests/conftest.py` for each scaffolded service
 
 **Frontend:**
 - [ ] `src/app/layout.tsx`, `src/app/page.tsx`
@@ -344,4 +337,5 @@ When scaffolding, create at minimum:
 
 - [CODING_STANDARDS.md](CODING_STANDARDS.md) — where logic must live
 - [DEVELOPMENT_PHASES.md](DEVELOPMENT_PHASES.md) — when to create each folder
+- [EVENTS.md](EVENTS.md) — RabbitMQ exchanges, routing keys, message contracts
 - [AGENTS.md](../AGENTS.md) — AI agent workflow

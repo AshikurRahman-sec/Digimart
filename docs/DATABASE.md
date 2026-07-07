@@ -2,6 +2,29 @@
 
 PostgreSQL 16. All primary keys are UUID v4 unless noted. Timestamps are `timestamptz`.
 
+## Microservice data ownership
+
+DigiMart uses microservices. Each service owns its tables, migrations, and write paths.
+
+| Service | Tables |
+|---------|--------|
+| Identity | `users`, `refresh_tokens` |
+| Catalog | `creator_profiles`, `products`, `product_content_items` |
+| Content | `content_items` |
+| Media Worker | `transcode_jobs` |
+| Payment | `subscription_plans`, `purchases`, `subscriptions`, `stripe_webhook_events` |
+| Audit | `audit_logs` |
+| Entitlement | no required source-of-truth table in MVP; derives access from payment/catalog/content events and uses Redis cache |
+| Playback | playback sessions may start in Redis; add a service-owned table later if persistent sessions are required |
+
+Rules:
+
+- A service may write only to the tables it owns.
+- Cross-service writes are forbidden. Publish RabbitMQ events instead.
+- Cross-service reads should prefer service APIs. Direct database reads across service ownership are allowed only for read-optimized MVP queries documented in the relevant service and must not become write paths.
+- Each service has its own Alembic migration directory under `backend/services/{service}/alembic/`.
+- Event consumers that update local projections must be idempotent.
+
 ---
 
 ## Entity relationship diagram
@@ -367,10 +390,11 @@ SELECT EXISTS (
 
 Use Alembic. Naming: `{revision}_{short_description}.py`.
 
-Order:
-1. users, refresh_tokens
-2. creator_profiles
-3. content_items, transcode_jobs
-4. products, product_content_items, subscription_plans
-5. purchases, subscriptions
-6. audit_logs, stripe_webhook_events
+Service migration order:
+
+1. identity: users, refresh_tokens
+2. catalog: creator_profiles, products, product_content_items
+3. content: content_items
+4. media-worker: transcode_jobs
+5. payment: subscription_plans, purchases, subscriptions, stripe_webhook_events
+6. audit: audit_logs

@@ -17,17 +17,17 @@ class UserStub:
     is_active: bool = True
 
 
-def test_creator_has_upload_permission() -> None:
-    user = UserStub(id=uuid4(), roles=[Role.BUYER.value, Role.CREATOR.value])
+def test_user_has_upload_permission() -> None:
+    user = UserStub(id=uuid4(), roles=[Role.USER.value])
 
     assert PermissionService().has_permission(user, Permission.CONTENT_UPLOAD)
 
 
-def test_buyer_lacks_creator_permission() -> None:
-    user = UserStub(id=uuid4(), roles=[Role.BUYER.value])
+def test_user_lacks_admin_permission() -> None:
+    user = UserStub(id=uuid4(), roles=[Role.USER.value])
 
     with pytest.raises(ForbiddenError):
-        PermissionService().require_permission(user, Permission.CONTENT_UPLOAD)
+        PermissionService().require_permission(user, Permission.ADMIN_DASHBOARD)
 
 
 def test_inactive_admin_is_denied() -> None:

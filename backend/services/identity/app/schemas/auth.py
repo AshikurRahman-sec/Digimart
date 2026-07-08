@@ -12,8 +12,8 @@ from app.core.permissions import Role
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6, max_length=256)
-    role: Role = Role.BUYER
+    password: str = Field(min_length=10, max_length=256)
+    role: Role = Role.USER
 
     @field_validator("role")
     @classmethod
@@ -52,4 +52,3 @@ class UserRead(BaseModel):
     is_active: bool
     email_verified: bool
     created_at: datetime
-

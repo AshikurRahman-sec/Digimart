@@ -39,8 +39,8 @@ async def client():
 
     app = create_app()
 
-    @app.get("/creator-only")
-    async def creator_only(_user=__import__("fastapi").Depends(require_permission(Permission.CONTENT_UPLOAD))):
+    @app.get("/admin-only")
+    async def admin_only(_user=__import__("fastapi").Depends(require_permission(Permission.ADMIN_DASHBOARD))):
         return {"status": "ok"}
 
     app.dependency_overrides[get_session] = override_session
@@ -60,11 +60,11 @@ async def client():
 async def test_register_login_me_refresh_and_logout(client: AsyncClient) -> None:
     register_response = await client.post(
         "/api/v1/auth/register",
-        json={"email": "Buyer@Example.com", "password": "very-secret-password", "role": "buyer"},
+        json={"email": "Buyer@Example.com", "password": "very-secret-password", "role": "user"},
     )
     assert register_response.status_code == 201
     assert register_response.json()["email"] == "buyer@example.com"
-    assert register_response.json()["roles"] == ["buyer"]
+    assert register_response.json()["roles"] == ["user"]
 
     login_response = await client.post(
         "/api/v1/auth/login",
@@ -118,16 +118,24 @@ async def test_login_invalid_credentials_returns_401(client: AsyncClient) -> Non
     assert response.json()["code"] == "AUTHENTICATION_FAILED"
 
 
+async def test_register_short_password_returns_422(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "buyer@example.com", "password": "short", "role": "user"},
+    )
+    assert response.status_code == 422
+
+
 async def test_protected_endpoint_requires_auth(client: AsyncClient) -> None:
     response = await client.get("/api/v1/auth/me")
     assert response.status_code == 401
     assert response.json()["code"] == "AUTHENTICATION_FAILED"
 
 
-async def test_creator_permission_endpoint_denies_buyer(client: AsyncClient) -> None:
+async def test_admin_permission_endpoint_denies_user(client: AsyncClient) -> None:
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "buyer@example.com", "password": "very-secret-password", "role": "buyer"},
+        json={"email": "buyer@example.com", "password": "very-secret-password", "role": "user"},
     )
     login_response = await client.post(
         "/api/v1/auth/login",
@@ -136,7 +144,7 @@ async def test_creator_permission_endpoint_denies_buyer(client: AsyncClient) -> 
     token = login_response.json()["access_token"]
 
     response = await client.get(
-        "/creator-only",
+        "/admin-only",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 403

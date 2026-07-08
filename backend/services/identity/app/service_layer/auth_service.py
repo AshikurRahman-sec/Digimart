@@ -41,9 +41,7 @@ class AuthService:
         if existing:
             raise ConflictError("A user with this email already exists")
 
-        roles = [Role.BUYER.value]
-        if request.role == Role.CREATOR:
-            roles.append(Role.CREATOR.value)
+        roles = [Role.USER.value]
 
         user = User(email=email, password_hash=hash_password(request.password), roles=roles)
         self.session.add(user)

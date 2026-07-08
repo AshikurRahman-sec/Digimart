@@ -10,14 +10,14 @@ def test_user_registered_event_contract() -> None:
         payload={
             "user_id": "40eeae37-ec03-41dd-b184-5fe318f0cc9d",
             "email": "user@example.com",
-            "roles": ["buyer"],
+            "roles": ["user"],
         },
     )
 
     assert isinstance(event, EventEnvelope)
     assert event.event_type == EventType.USER_REGISTERED
     assert event.event_version == EVENT_VERSIONS[EventType.USER_REGISTERED]
-    assert event.payload["roles"] == ["buyer"]
+    assert event.payload["roles"] == ["user"]
 
 
 def test_login_succeeded_event_contract_has_audit_fields() -> None:

@@ -15,7 +15,7 @@ type AuthContextValue = {
   user: User | null;
   isReady: boolean;
   login(email: string, password: string): Promise<void>;
-  register(email: string, password: string, role: "buyer" | "creator"): Promise<void>;
+  register(email: string, password: string, role?: "user"): Promise<void>;
   logout(): Promise<void>;
 };
 
@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTokens(nextTokens);
         setUser(nextUser);
       },
-      async register(email, password, role) {
+      async register(email, password, role = "user") {
         await api.auth.register({ email, password, role });
 
         try {
@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const fallbackUser = {
             id: "",
             email,
-            roles: [role] as Array<"buyer" | "creator" | "admin">,
+            roles: [role] as Array<"user" | "admin">,
             is_active: true,
             email_verified: false,
             created_at: new Date().toISOString(),

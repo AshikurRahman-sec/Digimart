@@ -130,7 +130,7 @@ Do not create a new all-purpose backend module that bypasses these service bound
 |----------------|----------------|
 | Registration / login | Email + password; optional OAuth (Google) |
 | JWT access + refresh tokens | Access: 15 min; Refresh: 7 days, rotated |
-| Roles | `buyer`, `creator`, `admin` (user can hold multiple) |
+| Roles | `user`, `admin` |
 | MFA | TOTP for creators and admins (Phase 3+) |
 
 **Rule:** Every protected endpoint validates JWT, loads user, checks role + resource ownership.

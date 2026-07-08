@@ -27,7 +27,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column("email", sa.String(length=255), nullable=False),
         sa.Column("password_hash", sa.String(length=255), nullable=False),
-        sa.Column("roles", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'[\"buyer\"]'::jsonb"), nullable=False),
+        sa.Column("roles", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'[\"user\"]'::jsonb"), nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.text("true"), nullable=False),
         sa.Column("email_verified", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("mfa_secret", sa.String(length=64), nullable=True),

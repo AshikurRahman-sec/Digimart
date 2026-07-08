@@ -14,17 +14,23 @@ export function AuthWorkspace() {
   const router = useRouter();
   const { isReady, login, register, user } = useAuth();
   const [mode, setMode] = useState<Mode>("login");
-  const [email, setEmail] = useState("buyer@example.com");
+  const [email, setEmail] = useState("user@example.com");
   const [password, setPassword] = useState("very-secret-password");
-  const [role, setRole] = useState<"buyer" | "creator">("buyer");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("mode") === "register") {
+      setMode("register");
+    }
+  }, []);
+
+  useEffect(() => {
     if (isReady && user) {
-      const isCreator = user.roles?.includes("creator");
-      router.replace(isCreator ? "/dashboard" : "/library");
+      const isAdmin = user.roles?.includes("admin");
+      router.replace(isAdmin ? "/admin" : "/dashboard");
     }
   }, [isReady, router, user]);
 
@@ -38,7 +44,7 @@ export function AuthWorkspace() {
       if (mode === "login") {
         await login(email, password);
       } else {
-        await register(email, password, role);
+        await register(email, password);
       }
       setMessage("Opening your library.");
     } catch (caught) {
@@ -53,40 +59,23 @@ export function AuthWorkspace() {
   }
 
   return (
-    <main className="page-shell">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">
-            <ShoppingBag size={18} aria-hidden="true" />
-          </span>
-          DigiMart
-        </div>
-      </header>
-
+    <main className="page-shell auth-page">
       <div className="auth-workspace">
         <section className="panel auth-panel">
-          <div className="tabs" role="tablist" aria-label="Auth mode">
-            <button
-              className={`tab ${mode === "login" ? "tab-active" : ""}`}
-              onClick={() => setMode("login")}
-              type="button"
-            >
-              Login
-            </button>
-            <button
-              className={`tab ${mode === "register" ? "tab-active" : ""}`}
-              onClick={() => setMode("register")}
-              type="button"
-            >
-              Register
-            </button>
+          <div className="auth-brand">
+            <span className="brand-mark">
+              <ShoppingBag size={18} aria-hidden="true" />
+            </span>
+            <span>DigiMart</span>
           </div>
 
-          <h1 className="section-title">{mode === "login" ? "Welcome back" : "Create account"}</h1>
-          <p className="section-copy">
+          <h1 className="section-title">
+            {mode === "login" ? "Welcome back" : "Create your account"}
+          </h1>
+          <p className="section-copy auth-mode-copy">
             {mode === "login"
-              ? "Access your DigiMart buyer or creator account."
-              : "Start as a buyer or creator."}
+              ? "Sign in to browse your services, manage subscriptions, and publish new offerings."
+              : "Register as a buyer to access the marketplace workspace."}
           </p>
 
           <form className="form" onSubmit={submit}>
@@ -101,27 +90,12 @@ export function AuthWorkspace() {
             <Input
               autoComplete={mode === "login" ? "current-password" : "new-password"}
               label="Password"
-              minLength={6}
+              minLength={mode === "register" ? 10 : 1}
               onChange={(event) => setPassword(event.target.value)}
               required
               type="password"
               value={password}
             />
-
-            {mode === "register" ? (
-              <label className="field" htmlFor="role">
-                <span className="label">Role</span>
-                <select
-                  className="select"
-                  id="role"
-                  onChange={(event) => setRole(event.target.value as "buyer" | "creator")}
-                  value={role}
-                >
-                  <option value="buyer">Buyer</option>
-                  <option value="creator">Creator</option>
-                </select>
-              </label>
-            ) : null}
 
             {error ? <div className="message message-error">{error}</div> : null}
             {message ? <div className="message message-success">{message}</div> : null}
@@ -135,6 +109,16 @@ export function AuthWorkspace() {
               {isSubmitting ? "Working..." : mode === "login" ? "Login" : "Register"}
             </Button>
           </form>
+
+          <div className="auth-switch">
+            <span>{mode === "login" ? "No account yet?" : "Already have an account?"}</span>
+            <button
+              onClick={() => setMode(mode === "login" ? "register" : "login")}
+              type="button"
+            >
+              {mode === "login" ? "Create account" : "Login"}
+            </button>
+          </div>
         </section>
       </div>
     </main>

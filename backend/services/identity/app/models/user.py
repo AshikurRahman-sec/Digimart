@@ -20,7 +20,7 @@ class User(Base):
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=lambda: [Role.BUYER.value])
+    roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=lambda: [Role.USER.value])
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)

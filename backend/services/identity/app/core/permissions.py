@@ -6,8 +6,7 @@ from enum import StrEnum
 
 
 class Role(StrEnum):
-    BUYER = "buyer"
-    CREATOR = "creator"
+    USER = "user"
     ADMIN = "admin"
 
 
@@ -30,13 +29,7 @@ class Permission(StrEnum):
 
 
 ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
-    Role.BUYER: {
-        Permission.PRODUCT_READ_PUBLIC,
-        Permission.CHECKOUT_CREATE,
-        Permission.PURCHASE_READ_OWN,
-        Permission.CONTENT_PLAYBACK,
-    },
-    Role.CREATOR: {
+    Role.USER: {
         Permission.PRODUCT_READ_PUBLIC,
         Permission.PRODUCT_CREATE,
         Permission.PRODUCT_READ_OWN,

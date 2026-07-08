@@ -11,7 +11,7 @@ export default function CreatorSettingsPage() {
 
   useEffect(() => {
     if (isReady && !user) router.replace("/");
-    if (isReady && user && !user.roles?.includes("creator")) router.replace("/library");
+    if (isReady && user && !user.roles?.includes("user")) router.replace("/dashboard");
   }, [isReady, user, router]);
 
   if (!isReady || !user) {

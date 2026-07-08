@@ -70,6 +70,7 @@ def require_role(role: Role) -> Callable[..., AsyncIterator[User]]:
     return _dep
 
 
-RequireCreator = require_role(Role.CREATOR)
+RequireUser = require_role(Role.USER)
+RequireCreator = RequireUser
 RequireAdmin = require_role(Role.ADMIN)
 
